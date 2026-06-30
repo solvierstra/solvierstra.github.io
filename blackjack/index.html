@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>blackjack</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    color: #fff;
+    font-family: monospace;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  pre { line-height: 1.5; white-space: pre; }
+  #msg { min-height: 1.5em; }
+  button {
+    background: none;
+    border: 1px solid #fff;
+    color: #fff;
+    font-family: monospace;
+    font-size: 16px;
+    padding: 2px 10px;
+    cursor: pointer;
+    margin-right: 6px;
+  }
+  button:hover { background: #fff; color: #000; }
+  button:disabled { border-color: #444; color: #444; cursor: default; background: none; }
+  input[type=number] {
+    background: none;
+    border: 1px solid #fff;
+    color: #fff;
+    font-family: monospace;
+    font-size: 16px;
+    padding: 2px 6px;
+    width: 70px;
+    margin-right: 6px;
+  }
+  input:disabled { border-color: #444; color: #444; }
+  #btns { margin-top: 8px; }
+  body.light { background: #fff; color: #000; }
+  body.light button { color: #000; border-color: #000; }
+  body.light button:hover { background: #000; color: #fff; }
+  body.light button:disabled { border-color: #ccc; color: #ccc; }
+  body.light input[type=number] { color: #000; border-color: #000; }
+  body.light input:disabled { border-color: #ccc; color: #ccc; }
+  #theme-toggle {
+    position: fixed;
+    top: 6px;
+    left: 6px;
+    width: 8px;
+    height: 8px;
+    border: 1px solid #444;
+    border-radius: 50%;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    background: none;
+  }
+  body.light #theme-toggle { border-color: #ccc; }
+</style>
+</head>
+<body>
+<button id="theme-toggle" onclick="toggleTheme()" aria-label="toggle theme"></button>
+<div>
+  <pre id="out"></pre>
+  <pre id="msg"></pre>
+  <div id="btns">
+    <button id="bd" onclick="deal()">deal</button>
+    <button id="bh" onclick="hit()" disabled>hit</button>
+    <button id="bst" onclick="stay()" disabled>stay</button>
+    <button id="bdd" onclick="doubleDown()" disabled>double</button>
+    <button id="br" onclick="restart()" style="display:none">restart</button>
+    &nbsp;
+    <input type="number" id="betinput" min="1" value="10" oninput="setBet()">
+  </div>
+</div>
+
+<script>
+const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const SUITS = ['S','H','D','C'];
+let deck=[], player=[], dealer=[], balance=100, bet=10, on=false, gameOver=false;
+
+function newDeck() {
+  deck = SUITS.flatMap(s => RANKS.map(r => ({r,s})));
+  for (let i=deck.length-1;i>0;i--) { const j=Math.random()*i|0; [deck[i],deck[j]]=[deck[j],deck[i]]; }
+}
+
+function draw() { return deck.pop(); }
+
+function val(hand) {
+  let v=0,a=0;
+  for (const c of hand) {
+    if (c.r==='A'){a++;v+=11;}
+    else if ('JQK'.includes(c.r)) v+=10;
+    else v+=+c.r;
+  }
+  while(v>21&&a--) v-=10;
+  return v;
+}
+
+function fmt(c) { return `[${c.r}${c.s}]`; }
+function fmtHand(h, hide) { return h.map((c,i)=>hide&&i===1?'[??]':fmt(c)).join(' '); }
+
+function setBet() {
+  const v = parseInt(document.getElementById('betinput').value);
+  if (!isNaN(v) && v > 0) bet = v;
+}
+
+function startScreen() {
+  document.getElementById('out').textContent = `bal: $${balance}  bet: $${bet}`;
+  msg('');
+}
+
+function render(hide) {
+  const pv=val(player), dv=hide?val([dealer[0]]):val(dealer);
+  document.getElementById('out').textContent =
+    `dealer: ${fmtHand(dealer,hide)}  (${hide?'?':dv})\n\n` +
+    `you:    ${fmtHand(player,false)}  (${pv})\n\n` +
+    `bal: $${balance}  bet: $${bet}`;
+}
+
+function msg(t) { document.getElementById('msg').textContent = t ? '\n'+t : ''; }
+
+function btns(active) {
+  document.getElementById('bd').disabled = active;
+  document.getElementById('bh').disabled = !active;
+  document.getElementById('bst').disabled = !active;
+  document.getElementById('bdd').disabled = !active || player.length !== 2 || bet > balance;
+  document.getElementById('betinput').disabled = active;
+}
+
+function deal() {
+  setBet();
+  if (bet > balance){msg('bet exceeds balance.');return;}
+  if (bet < 1){msg('min bet is $1.');return;}
+  if (deck.length<10) newDeck();
+  player=[draw(),draw()]; dealer=[draw(),draw()];
+  balance-=bet; on=true; msg(''); render(true); btns(true);
+  if (val(player)===21) end();
+}
+
+function hit() {
+  if (!on) return;
+  player.push(draw()); render(true);
+  document.getElementById('bdd').disabled = true;
+  if (val(player)>=21) end();
+}
+
+function doubleDown() {
+  if (!on || player.length !== 2 || bet > balance) return;
+  balance -= bet;
+  bet *= 2;
+  player.push(draw());
+  render(true);
+  end();
+}
+
+function stay() {
+  if (!on) return;
+  while(val(dealer)<17) dealer.push(draw());
+  end();
+}
+
+function end() {
+  on=false; btns(false); render(false);
+  const pv=val(player), dv=val(dealer);
+  const pbj=pv===21&&player.length===2, dbj=dv===21&&dealer.length===2;
+  let m;
+  if      (pv>21)     { m='bust. you lose.'; }
+  else if (pbj&&!dbj) { balance+=bet*2.5|0; m='blackjack! you win $'+(bet*1.5|0)+'.'; }
+  else if (dbj)       { m='dealer blackjack. you lose.'; }
+  else if (dv>21)     { balance+=bet*2; m='dealer busts. you win $'+bet+'.'; }
+  else if (pv>dv)     { balance+=bet*2; m='you win $'+bet+'.'; }
+  else if (pv===dv)   { balance+=bet; m='push.'; }
+  else                { m='dealer wins.'; }
+  document.getElementById('out').textContent =
+    `dealer: ${fmtHand(dealer,false)}  (${dv})\n\n` +
+    `you:    ${fmtHand(player,false)}  (${pv})\n\n` +
+    `bal: $${balance}  bet: $${bet}`;
+
+  if (balance<=0) {
+    gameOver = true;
+    m += '\nyou are out of money. game over.';
+    document.getElementById('bd').style.display = 'none';
+    document.getElementById('bh').style.display = 'none';
+    document.getElementById('bst').style.display = 'none';
+    document.getElementById('bdd').style.display = 'none';
+    document.getElementById('betinput').style.display = 'none';
+    document.getElementById('br').style.display = 'inline-block';
+  }
+  msg(m);
+  setBet();
+}
+
+function restart() {
+  balance = 100; bet = 10; gameOver = false; player=[]; dealer=[];
+  document.getElementById('betinput').value = 10;
+  document.getElementById('bd').style.display = 'inline-block';
+  document.getElementById('bh').style.display = 'inline-block';
+  document.getElementById('bst').style.display = 'inline-block';
+  document.getElementById('bdd').style.display = 'inline-block';
+  document.getElementById('betinput').style.display = 'inline-block';
+  document.getElementById('br').style.display = 'none';
+  newDeck();
+  btns(false);
+  startScreen();
+}
+
+function toggleTheme() {
+  document.body.classList.toggle('light');
+}
+
+document.addEventListener('keydown', (e) => {
+  if (document.activeElement === document.getElementById('betinput')) return;
+  const k = e.key.toLowerCase();
+  if (k === 'h' && !document.getElementById('bh').disabled) hit();
+  else if (k === 's' && !document.getElementById('bst').disabled) stay();
+  else if (k === 'd') {
+    if (!document.getElementById('bd').disabled) deal();
+    else if (!document.getElementById('bdd').disabled) doubleDown();
+  }
+});
+
+newDeck();
+startScreen();
+</script>
+</body>
+</html>
